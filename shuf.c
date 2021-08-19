@@ -12,7 +12,7 @@ main(int argc, char **argv)
 {
 	int c;
 	FILE *fp;
-	char *buf=NULL, **recs=NULL, *tmp;
+	char *buf=NULL, **recs=NULL, *tmp, *end;
 	size_t buf_len=0, buf_cap=0;
 	size_t recs_len=0, recs_cap=0;
 	size_t nr, i,j;
@@ -33,8 +33,7 @@ main(int argc, char **argv)
 	for (;;) {
 		if (buf_len + READSZ > buf_cap) {
 			buf_cap = buf_cap ? buf_cap*2 : READSZ;
-			/* buf_cap+1 for possible extra terminator */
-			if (!(buf = realloc(buf, buf_cap+1)))
+			if (!(buf = realloc(buf, buf_cap)))
 				err(EX_UNAVAILABLE, "realloc");
 		}
 		if (!(nr = fread(buf+buf_len, 1, READSZ, fp)))
@@ -43,10 +42,6 @@ main(int argc, char **argv)
 	}
 	if (ferror(fp))
 		err(EX_IOERR, NULL);
-
-	if (buf[buf_len-1] != '\n')
-		buf_len++; /* we alloc'd room for this */
-	buf[buf_len-1] = '\0';
 
 	for (i=0; i<buf_len-1; i++) {
 		if (buf[i] != '\n')
@@ -58,7 +53,6 @@ main(int argc, char **argv)
 				err(EX_UNAVAILABLE, "realloc");
 		}
 		recs[recs_len++] = &buf[i+1];
-		buf[i] = '\0';
 	}
 
 	srandomdev();
@@ -69,8 +63,13 @@ main(int argc, char **argv)
 		recs[j] = tmp;
 	}
 
-	for (i=0; i<recs_len; i++)
-		puts(recs[i]);
+	for (i=0; i<recs_len; i++) {
+		end = recs[i];
+		while (*end != '\n' && end < buf+buf_len)
+			end++;
+		fwrite(recs[i], end-recs[i], 1, stdout);
+		putchar('\n');
+	}
 
 	return 0;
 }
