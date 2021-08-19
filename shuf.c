@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <time.h>
 #include <errno.h>
@@ -8,91 +9,134 @@
 #include <sysexits.h>
 #include <err.h>
 
-#define READSZ	4096
+#define READSZ	((size_t)1024*1024)
 
-static char *
-try_mmap(FILE *fp, size_t *lenp)
+static int verbosity = 0;
+
+static void
+debugf(const char *fmt, ...)
+{
+	va_list ap;
+
+	if (verbosity >= 2) {
+		va_start(ap, fmt);
+		vfprintf(stderr, fmt, ap);
+		va_end(ap);
+	}
+}
+
+static int
+try_getlen(FILE *fp, size_t *lenp)
 {
 	long pos;
-	void *mem;
 
 	if (fseek(fp, 0, SEEK_END) == -1) {
 		if (errno != ESPIPE)
 			err(EX_IOERR, "fseek");
-		return NULL;
+		debugf("fseek failed\n");
+		return -1;
 	}
+
 	if ((pos = ftell(fp)) == -1)
 		err(EX_IOERR, "ftell");
 
-	mem = mmap(NULL, (size_t)pos, PROT_READ, MAP_SHARED,
-	    fileno(fp), 0);
-	if (!mem) {
-		if (errno != EACCES)
-			err(EX_IOERR, "mmap");
-		rewind(fp);
+	rewind(fp);
+	*lenp = (size_t)pos;
+	return 0;
+}
+
+static void *
+try_readall(FILE *fp, size_t *lenp)
+{
+	char *buf, *buf_new;
+	size_t nr, len=0, cap=READSZ;
+
+	if (!(buf = malloc(cap))) {
+		debugf("malloc failed\n");
 		return NULL;
 	}
 
-	*lenp = (size_t)pos;
-	return mem;
+	while ((nr = fread(buf+len, 1, READSZ, fp))) {
+		len += nr;
+		if (len+READSZ <= cap)
+			continue;
+		cap *= 2;
+		if (!(buf_new = realloc(buf, cap))) {
+			debugf("realloc failed\n");
+			break;
+		}
+		buf = buf_new;
+	}
+
+	*lenp = len;
+	return buf;
+}
+
+static void
+copy_all(FILE *src, FILE *dst, size_t *lenp)
+{
+	static char buf[READSZ];
+	size_t nr, len=0;
+
+	while ((nr = fread(buf, 1, READSZ, src))) {
+		if (!fwrite(buf, nr, 1, dst))
+			err(EX_IOERR, "write to tmpfile");
+		len += nr;
+	}
+	if (ferror(src))
+		err(EX_IOERR, NULL);
+
+	*lenp = len;
 }
 
 static char *
-tmp_fallback(FILE *fp, char *oldbuf, size_t oldbuf_len, size_t *lenp)
+stubborn_mmap(FILE *fp, size_t *lenp)
 {
-	static char buf[4096];
+	size_t len, len_read=0, len_copied;
+	char *mem;
 	FILE *tempf;
-	size_t nr;
-	char *data;
 
+	debugf("trying mmap... ");
+	if (try_getlen(fp, &len) != -1) {
+		mem = mmap(NULL, len, PROT_READ, MAP_SHARED,
+		    fileno(fp), 0);
+		if (mem) {
+			debugf("succeeded\n");
+			*lenp = len;
+			return mem;
+		}
+		if (errno != EACCES)
+			err(EX_OSERR, "mmap");
+	}
+
+	debugf("trying full read... ");
+	if ((mem = try_readall(fp, &len_read)))
+		if (feof(fp)) {
+			debugf("succeeded\n");
+			*lenp = len_read;
+			return mem;
+		}
+
+	debugf("using a tmpfile... ");
 	if (!(tempf = tmpfile()))
-		err(EX_IOERR, "tmpfile");
-	if (!fwrite(oldbuf, oldbuf_len, 1, tempf))
-		err(EX_IOERR, "write to tmpfile");
+		err(EX_OSERR, "tmpfile");
 
-	while ((nr = fread(buf, 1, sizeof(buf), fp)))
-		if (!fwrite(buf, nr, 1, tempf))
-			err(EX_IOERR, "write to tmpfile");
-	if (ferror(fp))
-		err(EX_IOERR, NULL);
+	/* write any data read so far */
+	if (mem && !fwrite(mem, len_read, 1, tempf)) {
+		err(EX_IOERR, "writing to tmpfile");
+		free(mem);
+	}
 
-	free(oldbuf);
+	copy_all(fp, tempf, &len_copied);
 	fclose(fp);
 
-	if (!(data = try_mmap(tempf, lenp)))
-		err(EX_IOERR, "fseek/mmap on tmpfile");
+	*lenp = len_read + len_copied;
+	mem = mmap(NULL, len, PROT_READ, MAP_SHARED, fileno(tempf), 0);
+	if (!mem)
+		err(EX_OSERR, "mmap of tmpfile");
 
-	return data;
-}
-
-static char *
-read_all(FILE *fp, size_t *lenp)
-{
-	char *buf=NULL, *buf_new;
-	size_t buf_len=0, buf_cap=0;
-	size_t nr;
-
-	if ((buf = try_mmap(fp, lenp)))
-		return buf;
-
-	for (;;) {
-		if (buf_len + READSZ > buf_cap) {
-			buf_cap = buf_cap ? buf_cap*2 : READSZ;
-			buf_new = realloc(buf, buf_cap);
-			if (!buf_new)
-				return tmp_fallback(fp, buf, buf_len,
-				    lenp);
-			buf = buf_new;
-		}
-		if (!(nr = fread(buf+buf_len, 1, READSZ, fp)))
-			break;
-		buf_len += nr;
-	}
-	if (ferror(fp))
-		err(EX_IOERR, NULL);
-
-	*lenp = buf_len;
-	return buf;
+	debugf("succeeded\n");
+	return mem;
 }
 
 static char **
@@ -147,8 +191,12 @@ main(int argc, char **argv)
 
 	srandom(time(NULL));
 
-	while ((c = getopt(argc, argv, "")) != -1)
-		errx(EX_USAGE, "usage: shuf [file ...]");
+	while ((c = getopt(argc, argv, "v")) != -1)
+		switch (c) {
+		case 'v': verbosity++; break;
+		default:
+			errx(EX_USAGE, "usage: shuf [file ...]");
+		}
 
 	argc -= optind;
 	argv += optind;
@@ -160,10 +208,15 @@ main(int argc, char **argv)
 	else if (!(fp = fopen(argv[0], "r")))
 		err(EX_NOINPUT, "%s", argv[0]);
 
-	buf = read_all(fp, &buf_len);
+	buf = stubborn_mmap(fp, &buf_len);
+
+	debugf("locating lines\n");
 	recs = get_recs(buf, buf_len, &recs_len);
+
+	debugf("shuffling\n");
 	shuf(recs, recs_len);
 
+	debugf("printing\n");
 	for (i=0; i<recs_len; i++) {
 		end = recs[i];
 		while (*end != '\n' && end < buf+buf_len)
