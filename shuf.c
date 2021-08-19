@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <getopt.h>
 #include <sysexits.h>
 #include <err.h>
@@ -16,6 +17,8 @@ main(int argc, char **argv)
 	size_t buf_len=0, buf_cap=0;
 	size_t recs_len=0, recs_cap=0;
 	size_t nr, i,j;
+
+	srandom(time(NULL));
 
 	while ((c = getopt(argc, argv, "")) != -1)
 		errx(EX_USAGE, "usage: shuf [file ...]");
@@ -55,7 +58,6 @@ main(int argc, char **argv)
 		recs[recs_len++] = &buf[i+1];
 	}
 
-	srandomdev();
 	for (i=0; i<recs_len-1; i++) {
 		j = i + random() % (recs_len-i);
 		tmp = recs[i];
