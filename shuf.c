@@ -38,9 +38,37 @@ try_mmap(FILE *fp, size_t *lenp)
 }
 
 static char *
+tmp_fallback(FILE *fp, char *oldbuf, size_t oldbuf_len, size_t *lenp)
+{
+	static char buf[4096];
+	FILE *tempf;
+	size_t nr;
+	char *data;
+
+	if (!(tempf = tmpfile()))
+		err(EX_IOERR, "tmpfile");
+	if (!fwrite(oldbuf, oldbuf_len, 1, tempf))
+		err(EX_IOERR, "write to tmpfile");
+
+	while ((nr = fread(buf, 1, sizeof(buf), fp)))
+		if (!fwrite(buf, nr, 1, tempf))
+			err(EX_IOERR, "write to tmpfile");
+	if (ferror(fp))
+		err(EX_IOERR, NULL);
+
+	free(oldbuf);
+	fclose(fp);
+
+	if (!(data = try_mmap(tempf, lenp)))
+		err(EX_IOERR, "fseek/mmap on tmpfile");
+
+	return data;
+}
+
+static char *
 read_all(FILE *fp, size_t *lenp)
 {
-	char *buf=NULL;
+	char *buf=NULL, *buf_new;
 	size_t buf_len=0, buf_cap=0;
 	size_t nr;
 
@@ -50,8 +78,11 @@ read_all(FILE *fp, size_t *lenp)
 	for (;;) {
 		if (buf_len + READSZ > buf_cap) {
 			buf_cap = buf_cap ? buf_cap*2 : READSZ;
-			if (!(buf = realloc(buf, buf_cap)))
-				err(EX_UNAVAILABLE, "realloc");
+			buf_new = realloc(buf, buf_cap);
+			if (!buf_new)
+				return tmp_fallback(fp, buf, buf_len,
+				    lenp);
+			buf = buf_new;
 		}
 		if (!(nr = fread(buf+buf_len, 1, READSZ, fp)))
 			break;
