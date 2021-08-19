@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <errno.h>
+#include <sys/mman.h>
 #include <getopt.h>
 #include <sysexits.h>
 #include <err.h>
@@ -9,11 +11,41 @@
 #define READSZ	4096
 
 static char *
+try_mmap(FILE *fp, size_t *lenp)
+{
+	long pos;
+	void *mem;
+
+	if (fseek(fp, 0, SEEK_END) == -1) {
+		if (errno != ESPIPE)
+			err(EX_IOERR, "fseek");
+		return NULL;
+	}
+	if ((pos = ftell(fp)) == -1)
+		err(EX_IOERR, "ftell");
+
+	mem = mmap(NULL, (size_t)pos, PROT_READ, MAP_SHARED,
+	    fileno(fp), 0);
+	if (!mem) {
+		if (errno != EACCES)
+			err(EX_IOERR, "mmap");
+		rewind(fp);
+		return NULL;
+	}
+
+	*lenp = (size_t)pos;
+	return mem;
+}
+
+static char *
 read_all(FILE *fp, size_t *lenp)
 {
 	char *buf=NULL;
 	size_t buf_len=0, buf_cap=0;
 	size_t nr;
+
+	if ((buf = try_mmap(fp, lenp)))
+		return buf;
 
 	for (;;) {
 		if (buf_len + READSZ > buf_cap) {
