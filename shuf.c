@@ -28,7 +28,7 @@ main(int argc, char **argv)
 
 	if (argc > 1)
 		errx(EX_USAGE, "usage: shuf [file ...]");
-	else if (argv == 0 || !strcmp(argv[0], "-"))
+	else if (argc == 0 || !strcmp(argv[0], "-"))
 		fp = stdin;
 	else if (!(fp = fopen(argv[0], "r")))
 		err(EX_NOINPUT, "%s", argv[0]);
