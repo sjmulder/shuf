@@ -27,7 +27,7 @@ main(int argc, char **argv)
 	argv += optind;
 
 	if (argc > 1)
-		errx(EX_USAGE, "usage: shuf [file ...]");
+		errx(EX_USAGE, "usage: shuf [file]");
 	else if (argc == 0 || !strcmp(argv[0], "-"))
 		fp = stdin;
 	else if (!(fp = fopen(argv[0], "r")))
