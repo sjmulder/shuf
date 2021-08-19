@@ -15,7 +15,7 @@ main(int argc, char **argv)
 	FILE *fp;
 	char *buf=NULL, **recs=NULL, *tmp, *end;
 	size_t buf_len=0, buf_cap=0;
-	size_t recs_len=0, recs_cap=0;
+	size_t recs_len=0, recs_cap=64;
 	size_t nr, i,j;
 
 	srandom(time(NULL));
@@ -46,11 +46,14 @@ main(int argc, char **argv)
 	if (ferror(fp))
 		err(EX_IOERR, NULL);
 
+	if (!(recs = malloc(recs_cap*sizeof(*recs))))
+		err(EX_UNAVAILABLE, "malloc");
+	recs[recs_len++] = buf;
 	for (i=0; i<buf_len-1; i++) {
 		if (buf[i] != '\n')
 			continue;
 		if (recs_len >= recs_cap) {
-			recs_cap = recs_cap ? recs_cap*2 : 64;
+			recs_cap *= 2;
 			recs = realloc(recs, recs_cap*sizeof(*recs));
 			if (!recs)
 				err(EX_UNAVAILABLE, "realloc");
