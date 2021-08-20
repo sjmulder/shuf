@@ -20,14 +20,13 @@
 # include <sys/mman.h>
 # include <sysexits.h>
 # include <err.h>
-# define HAVE_ERR
 #endif
 
 #define READSZ	((size_t)1024*1024)
 
 static int verbosity = 0;
 
-#ifndef HAVE_ERR
+#ifdef _WIN32
 static noreturn void
 err(int code, const char *fmt, ...)
 {
