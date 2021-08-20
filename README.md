@@ -46,8 +46,10 @@ On systems with overcommit (practically any stock Linux set up) the
 system will kill the utility instead of failing an allocation, so it'll
 never get to using a temporary file.
 
-The Windows version doesn't have any superpower. It just tries to read
-the input into memory.
+Bugs
+----
+When reading a file into memory, the Windows version seems to stop
+prematurely (80 MB into a 1 GB file).
 
 Author
 ------

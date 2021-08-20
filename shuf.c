@@ -21,7 +21,6 @@
 # include <sysexits.h>
 # include <err.h>
 # define HAVE_ERR
-# define HAVE_MMAP
 # define HAVE_RANDOM
 #endif
 
@@ -70,7 +69,6 @@ debugf(const char *fmt, ...)
 	}
 }
 
-#ifdef HAVE_MMAP /* not used otherwise */
 static int
 try_getlen(FILE *fp, size_t *lenp)
 {
@@ -95,7 +93,35 @@ try_getlen(FILE *fp, size_t *lenp)
 	*lenp = (size_t)pos;
 	return 0;
 }
+
+static void *
+try_mmap(FILE *fp, size_t len)
+{
+	void *mem;
+#ifdef _WIN32
+	HANDLE hfile, mapping;
+
+	(void)len; /* use full size */
+
+	hfile = (HANDLE)_get_osfhandle(_fileno(fp));
+	mapping = CreateFileMappingA(hfile, NULL, PAGE_READONLY, 0, 0,
+	    NULL);
+	if (!mapping) {
+		debugf("CreateFileMappingA failed\n");
+		return NULL;
+	}
+	if (!(mem = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0))) {
+		debugf("MapViewOfFile failed\n");
+		CloseHandle(mapping);
+		return NULL;
+	}
+#else
+	mem = mmap(NULL, len, PROT_READ, MAP_SHARED, fileno(fp), 0);
+	if (!mem && errno != EACCES)
+		errx(EX_OSERR, "mmap");
 #endif
+	return mem;
+}
 
 static void *
 try_readall(FILE *fp, size_t *lenp)
@@ -128,7 +154,6 @@ try_readall(FILE *fp, size_t *lenp)
 	return buf;
 }
 
-#ifdef HAVE_MMAP /* not used otherwise */
 static void
 copy_all(FILE *src, FILE *dst, size_t *lenp)
 {
@@ -145,32 +170,21 @@ copy_all(FILE *src, FILE *dst, size_t *lenp)
 
 	*lenp = len;
 }
-#endif
 
 static char *
 stubborn_mmap(FILE *fp, size_t *lenp)
 {
-	size_t len_read=0;
+	size_t len, len_read=0, len_copied;
 	char *mem;
-#ifdef HAVE_MMAP
-	size_t len, len_copied;
 	FILE *tempf;
 
 	debugf("trying mmap... ");
-	if (try_getlen(fp, &len) != -1) {
-		mem = mmap(NULL, len, PROT_READ, MAP_SHARED,
-		    fileno(fp), 0);
-		if (mem) {
+	if (try_getlen(fp, &len) != -1)
+		if ((mem = try_mmap(fp, len))) {
 			debugf("succeeded (%zu bytes)\n", len);
 			*lenp = len;
 			return mem;
 		}
-		if (errno != EACCES)
-			err(EX_OSERR, "mmap");
-	}
-#else
-	debugf("mmap not available\n");
-#endif
 
 	debugf("trying full read... ");
 	if ((mem = try_readall(fp, &len_read)))
@@ -180,7 +194,6 @@ stubborn_mmap(FILE *fp, size_t *lenp)
 			return mem;
 		}
 
-#ifdef HAVE_MMAP
 	debugf("using a tmpfile... ");
 	if (!(tempf = tmpfile()))
 		err(EX_OSERR, "tmpfile");
@@ -195,15 +208,11 @@ stubborn_mmap(FILE *fp, size_t *lenp)
 	fclose(fp);
 
 	*lenp = len = len_read + len_copied;
-	mem = mmap(NULL, len, PROT_READ, MAP_SHARED, fileno(tempf), 0);
-	if (!mem)
-		err(EX_OSERR, "mmap of tmpfile");
+	if (!(mem = try_mmap(tempf, len)))
+		errx(EX_OSERR, "mmap of tmpfile failed");
 
 	debugf("succeeded (%zu bytes)\n", len);
 	return mem;
-#else
-	errx(1, "out of memory");
-#endif
 }
 
 static char **
