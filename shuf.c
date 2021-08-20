@@ -21,7 +21,6 @@
 # include <sysexits.h>
 # include <err.h>
 # define HAVE_ERR
-# define HAVE_RANDOM
 #endif
 
 #define READSZ	((size_t)1024*1024)
@@ -249,11 +248,7 @@ shuf(char **recs, size_t len)
 	void *tmp;
 
 	for (i=0; i<len-1; i++) {
-#ifdef HAVE_RANDOM
-		j = i + random() % (len-i);
-#else
 		j = i + rand() % (len-i);
-#endif
 		tmp = recs[i];
 		recs[i] = recs[j];
 		recs[j] = tmp;
@@ -269,11 +264,7 @@ main(int argc, char **argv)
 	size_t buf_len, recs_len;
 	size_t i;
 
-#ifdef HAVE_RANDOM
-	srandom(time(NULL));
-#else
 	srand(time(NULL));
-#endif
 
 	while ((c = getopt(argc, argv, "v")) != -1)
 		switch (c) {
