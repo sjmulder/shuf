@@ -130,7 +130,7 @@ stubborn_mmap(FILE *fp, size_t *lenp)
 	copy_all(fp, tempf, &len_copied);
 	fclose(fp);
 
-	*lenp = len_read + len_copied;
+	*lenp = len = len_read + len_copied;
 	mem = mmap(NULL, len, PROT_READ, MAP_SHARED, fileno(tempf), 0);
 	if (!mem)
 		err(EX_OSERR, "mmap of tmpfile");
