@@ -121,6 +121,9 @@ try_readall(FILE *fp, size_t *lenp)
 		buf = buf_new;
 	}
 
+	if (ferror(fp))
+		err(1, NULL);
+
 	*lenp = len;
 	return buf;
 }
