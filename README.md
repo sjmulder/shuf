@@ -29,9 +29,8 @@ Basic example:
     two
 
 To see the above process play out, we pipe a 1 GB text file to *shuf*
-(so it can't mmap it directly) on OpenBSD with strict memory limits so
-to force it to use a temporary file. The `-vv` option gets us debug
-output:
+(so it can't mmap it directly) on OpenBSD with strict memory limits to
+force it to use a temporary file. The `-vv` option gets us debug output:
 
     $ cat text-1G.txt | ./shuf -vv >/dev/null
     trying mmap... fseek failed
