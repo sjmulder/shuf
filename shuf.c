@@ -109,6 +109,7 @@ try_readall(FILE *fp, size_t *lenp)
 	}
 
 	while ((nr = fread(buf+len, 1, READSZ, fp))) {
+		debugf("\n  read %zu bytes", nr);
 		len += nr;
 		if (len+READSZ <= cap)
 			continue;
@@ -157,7 +158,7 @@ stubborn_mmap(FILE *fp, size_t *lenp)
 		mem = mmap(NULL, len, PROT_READ, MAP_SHARED,
 		    fileno(fp), 0);
 		if (mem) {
-			debugf("succeeded\n");
+			debugf("succeeded (%zu bytes)\n", len);
 			*lenp = len;
 			return mem;
 		}
@@ -171,7 +172,7 @@ stubborn_mmap(FILE *fp, size_t *lenp)
 	debugf("trying full read... ");
 	if ((mem = try_readall(fp, &len_read)))
 		if (feof(fp)) {
-			debugf("succeeded\n");
+			debugf("succeeded (%zu bytes)\n", len_read);
 			*lenp = len_read;
 			return mem;
 		}
@@ -195,7 +196,7 @@ stubborn_mmap(FILE *fp, size_t *lenp)
 	if (!mem)
 		err(EX_OSERR, "mmap of tmpfile");
 
-	debugf("succeeded\n");
+	debugf("succeeded (%zu bytes)\n", len);
 	return mem;
 #else
 	errx(1, "out of memory");
