@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <stdarg.h>
 #include <stdnoreturn.h>
 #include <string.h>
@@ -8,6 +9,8 @@
 #include <getopt.h>
 
 #ifdef _WIN32
+# include <windows.h>
+# include <io.h>
 # define EX_USAGE	64
 # define EX_NOINPUT	66
 # define EX_UNAVAILABLE	69
@@ -71,7 +74,7 @@ debugf(const char *fmt, ...)
 static int
 try_getlen(FILE *fp, size_t *lenp)
 {
-	long pos;
+	int64_t pos;
 
 	if (fseek(fp, 0, SEEK_END) == -1) {
 		if (errno != ESPIPE)
@@ -80,7 +83,11 @@ try_getlen(FILE *fp, size_t *lenp)
 		return -1;
 	}
 
+#ifdef _WIN32
+	if ((pos = _ftelli64(fp)) == -1)
+#else
 	if ((pos = ftell(fp)) == -1)
+#endif
 		err(EX_IOERR, "ftell");
 
 	rewind(fp);
