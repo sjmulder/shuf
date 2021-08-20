@@ -1,17 +1,59 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <stdnoreturn.h>
 #include <string.h>
 #include <time.h>
 #include <errno.h>
-#include <sys/mman.h>
 #include <getopt.h>
-#include <sysexits.h>
-#include <err.h>
+
+#ifdef _WIN32
+# define EX_USAGE	64
+# define EX_NOINPUT	66
+# define EX_UNAVAILABLE	69
+# define EX_OSERR	71
+# define EX_IOERR	74
+#else
+# include <sys/mman.h>
+# include <sysexits.h>
+# include <err.h>
+# define HAVE_ERR
+# define HAVE_MMAP
+# define HAVE_RANDOM
+#endif
 
 #define READSZ	((size_t)1024*1024)
 
 static int verbosity = 0;
+
+#ifndef HAVE_ERR
+static noreturn void
+err(int code, const char *fmt, ...)
+{
+	va_list ap;
+
+	fprintf(stderr, "%s: ", strerror(errno));
+	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+	fputc('\n', stderr);
+
+	exit(code);
+}
+
+static noreturn void
+errx(int code, const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+	fputc('\n', stderr);
+
+	exit(code);
+}
+#endif
 
 static void
 debugf(const char *fmt, ...)
@@ -25,6 +67,7 @@ debugf(const char *fmt, ...)
 	}
 }
 
+#ifdef HAVE_MMAP /* not used otherwise */
 static int
 try_getlen(FILE *fp, size_t *lenp)
 {
@@ -44,6 +87,7 @@ try_getlen(FILE *fp, size_t *lenp)
 	*lenp = (size_t)pos;
 	return 0;
 }
+#endif
 
 static void *
 try_readall(FILE *fp, size_t *lenp)
@@ -72,6 +116,7 @@ try_readall(FILE *fp, size_t *lenp)
 	return buf;
 }
 
+#ifdef HAVE_MMAP /* not used otherwise */
 static void
 copy_all(FILE *src, FILE *dst, size_t *lenp)
 {
@@ -88,12 +133,15 @@ copy_all(FILE *src, FILE *dst, size_t *lenp)
 
 	*lenp = len;
 }
+#endif
 
 static char *
 stubborn_mmap(FILE *fp, size_t *lenp)
 {
-	size_t len, len_read=0, len_copied;
+	size_t len_read=0;
 	char *mem;
+#ifdef HAVE_MMAP
+	size_t len, len_copied;
 	FILE *tempf;
 
 	debugf("trying mmap... ");
@@ -108,6 +156,9 @@ stubborn_mmap(FILE *fp, size_t *lenp)
 		if (errno != EACCES)
 			err(EX_OSERR, "mmap");
 	}
+#else
+	debugf("mmap not available\n");
+#endif
 
 	debugf("trying full read... ");
 	if ((mem = try_readall(fp, &len_read)))
@@ -117,6 +168,7 @@ stubborn_mmap(FILE *fp, size_t *lenp)
 			return mem;
 		}
 
+#ifdef HAVE_MMAP
 	debugf("using a tmpfile... ");
 	if (!(tempf = tmpfile()))
 		err(EX_OSERR, "tmpfile");
@@ -137,6 +189,9 @@ stubborn_mmap(FILE *fp, size_t *lenp)
 
 	debugf("succeeded\n");
 	return mem;
+#else
+	errx(1, "out of memory");
+#endif
 }
 
 static char **
@@ -173,7 +228,11 @@ shuf(char **recs, size_t len)
 	void *tmp;
 
 	for (i=0; i<len-1; i++) {
+#ifdef HAVE_RANDOM
 		j = i + random() % (len-i);
+#else
+		j = i + rand() % (len-i);
+#endif
 		tmp = recs[i];
 		recs[i] = recs[j];
 		recs[j] = tmp;
@@ -189,7 +248,11 @@ main(int argc, char **argv)
 	size_t buf_len, recs_len;
 	size_t i;
 
+#ifdef HAVE_RANDOM
 	srandom(time(NULL));
+#else
+	srand(time(NULL));
+#endif
 
 	while ((c = getopt(argc, argv, "v")) != -1)
 		switch (c) {

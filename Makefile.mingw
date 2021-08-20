@@ -1,0 +1,11 @@
+CFLAGS+=	-Wall -Wextra
+
+all: shuf.exe
+
+clean:
+	rm -f shuf.exe
+
+shuf.exe: shuf.c
+	${CC} ${CFLAGS} ${LDFLAGS} -o shuf.exe shuf.c ${LDLIBS}
+
+.PHONY: all clean
