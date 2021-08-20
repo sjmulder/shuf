@@ -77,7 +77,8 @@ try_getlen(FILE *fp, size_t *lenp)
 	int64_t pos;
 
 	if (fseek(fp, 0, SEEK_END) == -1) {
-		if (errno != ESPIPE)
+		/* EINVAL is for win32 */
+		if (errno != ESPIPE && errno != EINVAL)
 			err(EX_IOERR, "fseek");
 		debugf("fseek failed\n");
 		return -1;
