@@ -11,6 +11,7 @@
 #ifdef _WIN32
 # include <windows.h>
 # include <io.h>
+# define ftell(fp) _ftelli64(fp)
 # define EX_USAGE	64
 # define EX_NOINPUT	66
 # define EX_UNAVAILABLE	69
@@ -80,11 +81,7 @@ try_getlen(FILE *fp, size_t *lenp)
 		return -1;
 	}
 
-#ifdef _WIN32
-	if ((pos = _ftelli64(fp)) == -1)
-#else
 	if ((pos = ftell(fp)) == -1)
-#endif
 		err(EX_IOERR, "ftell");
 
 	rewind(fp);
